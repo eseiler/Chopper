@@ -199,19 +199,24 @@ private:
     using hibf_t = hierarchical_interleaved_bloom_filter<data_layout_mode>;
 
     //!\brief The type of the counting agent of an individual IBF of the hierarchical_interleaved_bloom_filter.
-    using counting_agent_t = typename hibf_t::ibf_t::counting_agent_type<value_t>;
+    // using counting_agent_t = typename hibf_t::ibf_t::counting_agent_type<value_t>;
 
     //!\brief A pointer to the augmented hierarchical_interleaved_bloom_filter.
     hibf_t const * hibf_ptr{nullptr};
 
     //!\brief Stores a counting agent for each IBF of the hierarchical_interleaved_bloom_filter.
-    std::vector<counting_agent_t> counting_agents;
+    // std::vector<std::optional<counting_agent_t>> counting_agents;
 
     //!\brief Helper for recursive bulk counting.
     template <std::ranges::forward_range value_range_t>
     void bulk_count_impl(value_range_t && values, size_t const threshold, int64_t const ibf_idx)
     {
-        auto & result = counting_agents[ibf_idx].bulk_count(values);
+        // auto & result = counting_agents[ibf_idx].bulk_count(values);
+
+        // if (!counting_agents[ibf_idx])
+        //     counting_agents[ibf_idx] = hibf_ptr->ibf_vector[ibf_idx].template counting_agent<value_t>();
+        auto agent = hibf_ptr->ibf_vector[ibf_idx].template counting_agent<value_t>();
+        auto & result = agent.bulk_count(values);
 
         value_t sum{};
 
@@ -230,7 +235,7 @@ private:
                      current_filename_index != hibf_ptr->user_bins.filename_index(ibf_idx, bin + 1)) // end of split bin
             {
                 if (sum >= threshold)
-                    result_buffer[current_filename_index] = sum;
+                    result_buffer.emplace_back(current_filename_index);
                 sum = 0;
             }
         }
@@ -252,65 +257,65 @@ public:
      * \param hibf The hierarchical_interleaved_bloom_filter.
      */
     explicit counting_agent_type(hibf_t const & hibf) :
-        hibf_ptr(std::addressof(hibf)), result_buffer(hibf.user_bins.num_user_bins())
+        hibf_ptr(std::addressof(hibf))//, counting_agents(hibf.ibf_vector.size())
     {
-        for (auto && ibf : hibf.ibf_vector)
-            counting_agents.emplace_back(ibf.template counting_agent<value_t>());
+        // for (auto && ibf : hibf.ibf_vector)
+        //     counting_agents.emplace_back(ibf.template counting_agent<value_t>());
     }
     //!\}
 
     //!\brief Stores the result of bulk_count().
-    seqan3::counting_vector<value_t> result_buffer;
+    std::vector<int64_t> result_buffer;
 
     /*!\name Counting
      * \{
      */
     /*!\brief Counts the occurrences in each user bin for all values in a range. SLOW
      */
-    template <std::ranges::forward_range value_range_t>
-    [[nodiscard]] seqan3::counting_vector<value_t> const & bulk_count(value_range_t && values) & noexcept
-    {
-        assert(hibf_ptr != nullptr);
-        assert(result_buffer.size() == hibf_ptr->user_bins.num_user_bins());
+    // template <std::ranges::forward_range value_range_t>
+    // [[nodiscard]] seqan3::counting_vector<value_t> const & bulk_count(value_range_t && values) & noexcept
+    // {
+    //     assert(hibf_ptr != nullptr);
+    //     assert(result_buffer.size() == hibf_ptr->user_bins.num_user_bins());
 
-        static_assert(std::ranges::forward_range<value_range_t>, "The values must model forward_range.");
-        static_assert(std::unsigned_integral<std::ranges::range_value_t<value_range_t>>,
-                      "An individual value must be an unsigned integral.");
+    //     static_assert(std::ranges::forward_range<value_range_t>, "The values must model forward_range.");
+    //     static_assert(std::unsigned_integral<std::ranges::range_value_t<value_range_t>>,
+    //                   "An individual value must be an unsigned integral.");
 
-        std::ranges::fill(result_buffer, 0);
+    //     std::ranges::fill(result_buffer, 0);
 
-        size_t sum{};
-        size_t ibf_idx{};
+    //     size_t sum{};
+    //     size_t ibf_idx{};
 
-        for (auto && counting_agent : counting_agents)
-        {
-            auto const & counts = counting_agent.bulk_count(values);
+    //     for (auto && counting_agent : counting_agents)
+    //     {
+    //         auto const & counts = counting_agent.bulk_count(values);
 
-            for (size_t bin{}; bin < counts.size(); ++bin)
-            {
-                sum += counts[bin];
-                auto const current_filename_index = hibf_ptr->user_bins.filename_index(ibf_idx, bin);
+    //         for (size_t bin{}; bin < counts.size(); ++bin)
+    //         {
+    //             sum += counts[bin];
+    //             auto const current_filename_index = hibf_ptr->user_bins.filename_index(ibf_idx, bin);
 
-                if (current_filename_index < 0)
-                {
-                    sum = 0;
-                }
-                else if (bin == counts.size() - 1 || current_filename_index != hibf_ptr->user_bins.filename_index(ibf_idx, bin + 1))
-                {
-                    result_buffer[current_filename_index] = sum;
-                    sum = 0;
-                }
-            }
-            ++ibf_idx;
-        }
+    //             if (current_filename_index < 0)
+    //             {
+    //                 sum = 0;
+    //             }
+    //             else if (bin == counts.size() - 1 || current_filename_index != hibf_ptr->user_bins.filename_index(ibf_idx, bin + 1))
+    //             {
+    //                 result_buffer[current_filename_index] = sum;
+    //                 sum = 0;
+    //             }
+    //         }
+    //         ++ibf_idx;
+    //     }
 
-        return result_buffer;
-    }
+    //     return result_buffer;
+    // }
 
     /*!\brief Counts the occurrences in each user bin for all values in a range.
      */
     template <std::ranges::forward_range value_range_t>
-    [[nodiscard]] seqan3::counting_vector<value_t> const & bulk_count(value_range_t && values, size_t const threshold) & noexcept
+    [[nodiscard]] std::vector<int64_t> const & bulk_count(value_range_t && values, size_t const threshold) & noexcept
     {
         assert(hibf_ptr != nullptr);
         assert(result_buffer.size() == hibf_ptr->user_bins.num_user_bins());
@@ -319,7 +324,7 @@ public:
         static_assert(std::unsigned_integral<std::ranges::range_value_t<value_range_t>>,
                       "An individual value must be an unsigned integral.");
 
-        std::ranges::fill(result_buffer, 0);
+        result_buffer.clear();
 
         bulk_count_impl(values, threshold, 0);
 
@@ -329,10 +334,16 @@ public:
     // `bulk_count` cannot be called on a temporary, since the object the returned reference points to
     // is immediately destroyed.
     template <std::ranges::range value_range_t>
-    [[nodiscard]] seqan3::counting_vector<value_t> const & bulk_count(value_range_t && values) && noexcept = delete;
+    [[nodiscard]] std::vector<int64_t> const & bulk_count(value_range_t && values) && noexcept = delete;
     template <std::ranges::range value_range_t>
-    [[nodiscard]] seqan3::counting_vector<value_t> const & bulk_count(value_range_t && values, size_t const threshold) && noexcept = delete;
+    [[nodiscard]] std::vector<int64_t> const & bulk_count(value_range_t && values, size_t const threshold) && noexcept = delete;
     //!\}
 };
 
 } // namespace hibf
+
+
+// TODO
+// membership agent that returns vector of user bin ids and uses a threshold
+// count agent that just counts and returns count for each user bin: !! do not recurse if count is 0 !!
+// It is apparently no efficient to store the counting agents of the IBFs

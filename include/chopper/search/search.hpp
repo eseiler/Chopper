@@ -19,13 +19,10 @@ inline void write_header(hibf::hierarchical_interleaved_bloom_filter<data_layout
     out_stream << "#QUERY_NAME\tUSER_BINS\n";
 }
 
-template <seqan3::data_layout data_layout_mode>
 inline void write_result(std::string & line,
-                         seqan3::counting_vector<uint16_t> const & result,
+                         std::vector<int64_t> const & result,
                          std::string const & id,
-                         hibf::hierarchical_interleaved_bloom_filter<data_layout_mode> const & hibf,
-                         sync_out & out_stream,
-                         size_t const threshold)
+                         sync_out & out_stream)
 {
     line.clear();
     line += id;
@@ -38,13 +35,10 @@ inline void write_result(std::string & line,
         return;
     }
 
-    for (size_t i = 0; i < result.size(); ++i)
+    for (auto && idx : result)
     {
-        if (result[i] >= threshold)
-        {
-            line += std::to_string(i);
-            line += ',';
-        }
+        line += std::to_string(idx);
+        line += ',';
     }
 
     line.back() = '\n';

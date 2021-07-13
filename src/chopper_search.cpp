@@ -100,7 +100,7 @@ int chopper_search(seqan3::argument_parser & parser)
 
             auto & result = agent.bulk_count(read_kmers, kmer_lemma);
 
-            write_result(buffer, result, id, hibf, sync_file, kmer_lemma);
+            write_result(buffer, result, id, sync_file);
         }
     };
 
