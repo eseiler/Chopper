@@ -94,12 +94,12 @@ int chopper_search(seqan3::argument_parser & parser)
         for (auto && [id, seq] : chunked_view)
         {
             clear_and_compute_kmers(read_kmers, seq, config);
-
-            auto & result = agent.bulk_count(read_kmers);
-
             size_t const kmer_lemma = (read_kmers.size() > (config.errors + 1) * config.k)
                             ? read_kmers.size() - (config.errors + 1) * config.k
                             : 0;
+
+            auto & result = agent.bulk_count(read_kmers, kmer_lemma);
+
             write_result(buffer, result, id, hibf, sync_file, kmer_lemma);
         }
     };

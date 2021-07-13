@@ -68,7 +68,7 @@ inline void search(std::vector<std::pair<int32_t, uint32_t>> & membership_result
 
     size_t sum{};
 
-    for (size_t bin{}; bin < result.size() - 1; ++bin)
+    for (size_t bin{}; bin < result.size(); ++bin)
     {
         sum += result[bin];
         auto const current_filename_index = hibf.user_bins.filename_index(ibf_idx, bin);
@@ -80,7 +80,8 @@ inline void search(std::vector<std::pair<int32_t, uint32_t>> & membership_result
                 search(membership_result, kmers, hibf, config, hibf.next_ibf_id[ibf_idx][bin]);
             sum = 0;
         }
-        else if (current_filename_index != hibf.user_bins.filename_index(ibf_idx, bin + 1)) // end of split bin
+        else if (bin == result.size() - 1 || // last bin
+                 current_filename_index != hibf.user_bins.filename_index(ibf_idx, bin + 1)) // end of split bin
         {
             // if threshold, write
             if (sum >= kmer_lemma)
@@ -88,11 +89,4 @@ inline void search(std::vector<std::pair<int32_t, uint32_t>> & membership_result
             sum = 0;
         }
     }
-
-    // check the last bin
-    if (sum + result.back() >= kmer_lemma)
-        if (auto bin =  result.size() - 1; hibf.user_bins.filename_index(ibf_idx, bin) < 0)
-            search(membership_result, kmers, hibf, config, hibf.next_ibf_id[ibf_idx][bin]);
-        else
-            membership_result.emplace_back(ibf_idx, bin);
 }

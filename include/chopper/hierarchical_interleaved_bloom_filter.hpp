@@ -207,6 +207,35 @@ private:
     //!\brief Stores a counting agent for each IBF of the hierarchical_interleaved_bloom_filter.
     std::vector<counting_agent_t> counting_agents;
 
+    //!\brief Helper for recursive bulk counting.
+    template <std::ranges::forward_range value_range_t>
+    void bulk_count_impl(value_range_t && values, size_t const threshold, int64_t const ibf_idx)
+    {
+        auto & result = counting_agents[ibf_idx].bulk_count(values);
+
+        value_t sum{};
+
+        for (size_t bin{}; bin < result.size(); ++bin)
+        {
+            sum += result[bin];
+            auto const current_filename_index = hibf_ptr->user_bins.filename_index(ibf_idx, bin);
+
+            if (current_filename_index < 0) // merged bin
+            {
+                if (sum >= threshold)
+                    bulk_count_impl(values, threshold, hibf_ptr->next_ibf_id[ibf_idx][bin]);
+                sum = 0;
+            }
+            else if (bin == result.size() - 1 || // last bin
+                     current_filename_index != hibf_ptr->user_bins.filename_index(ibf_idx, bin + 1)) // end of split bin
+            {
+                if (sum >= threshold)
+                    result_buffer[current_filename_index] = sum;
+                sum = 0;
+            }
+        }
+    }
+
 public:
     /*!\name Constructors, destructor and assignment
      * \{
@@ -236,15 +265,15 @@ public:
     /*!\name Counting
      * \{
      */
-    /*!\brief Counts the occurrences in each user bin for all values in a range.
+    /*!\brief Counts the occurrences in each user bin for all values in a range. SLOW
      */
-    template <std::ranges::range value_range_t>
+    template <std::ranges::forward_range value_range_t>
     [[nodiscard]] seqan3::counting_vector<value_t> const & bulk_count(value_range_t && values) & noexcept
     {
         assert(hibf_ptr != nullptr);
         assert(result_buffer.size() == hibf_ptr->user_bins.num_user_bins());
 
-        static_assert(std::ranges::input_range<value_range_t>, "The values must model input_range.");
+        static_assert(std::ranges::forward_range<value_range_t>, "The values must model forward_range.");
         static_assert(std::unsigned_integral<std::ranges::range_value_t<value_range_t>>,
                       "An individual value must be an unsigned integral.");
 
@@ -278,10 +307,31 @@ public:
         return result_buffer;
     }
 
+    /*!\brief Counts the occurrences in each user bin for all values in a range.
+     */
+    template <std::ranges::forward_range value_range_t>
+    [[nodiscard]] seqan3::counting_vector<value_t> const & bulk_count(value_range_t && values, size_t const threshold) & noexcept
+    {
+        assert(hibf_ptr != nullptr);
+        assert(result_buffer.size() == hibf_ptr->user_bins.num_user_bins());
+
+        static_assert(std::ranges::forward_range<value_range_t>, "The values must model forward_range.");
+        static_assert(std::unsigned_integral<std::ranges::range_value_t<value_range_t>>,
+                      "An individual value must be an unsigned integral.");
+
+        std::ranges::fill(result_buffer, 0);
+
+        bulk_count_impl(values, threshold, 0);
+
+        return result_buffer;
+    }
+
     // `bulk_count` cannot be called on a temporary, since the object the returned reference points to
     // is immediately destroyed.
     template <std::ranges::range value_range_t>
     [[nodiscard]] seqan3::counting_vector<value_t> const & bulk_count(value_range_t && values) && noexcept = delete;
+    template <std::ranges::range value_range_t>
+    [[nodiscard]] seqan3::counting_vector<value_t> const & bulk_count(value_range_t && values, size_t const threshold) && noexcept = delete;
     //!\}
 };
 
