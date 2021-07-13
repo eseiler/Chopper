@@ -4,14 +4,25 @@
 
 #include <seqan3/search/dream_index/interleaved_bloom_filter.hpp>
 
+namespace hibf
+{
+
 template <seqan3::data_layout data_layout_mode_ = seqan3::data_layout::uncompressed>
 class hierarchical_interleaved_bloom_filter
 {
 public:
+    // Forward declaration
+    class user_bins;
+
+    // Forward declaration
+    template <std::integral value_t>
+    class counting_agent_type;
+
     //!\brief Indicates whether the Interleaved Bloom Filter is compressed.
     static constexpr seqan3::data_layout data_layout_mode = data_layout_mode_;
 
-    class user_bins;
+    //!\brief The type of a individual Bloom filter.
+    using ibf_t = seqan3::interleaved_bloom_filter<data_layout_mode_>;
 
     /*!\name Constructors, destructor and assignment
      * \{
@@ -26,7 +37,7 @@ public:
     //!\}
 
     //!\brief The individual interleaved Bloom filters.
-    std::vector<seqan3::interleaved_bloom_filter<data_layout_mode_>> ibf_vector;
+    std::vector<ibf_t> ibf_vector;
 
     /*!\brief Stores for each bin in each IBF of the HIBF the ID of the next IBF.
      * \details
@@ -39,6 +50,14 @@ public:
 
     //!\brief Stores the user bins.
     user_bins user_bins;
+
+    /*!\brief Returns a counting_agent_type to be used for counting.
+     */
+    template <typename value_t = uint16_t>
+    counting_agent_type<value_t> counting_agent() const
+    {
+        return counting_agent_type<value_t>{*this};
+    }
 
     /*!\cond DEV
      * \brief Serialisation support function.
@@ -75,31 +94,45 @@ private:
 
 public:
 
+    //!\brief Returns the number of managed user bins.
+    size_t num_user_bins() const noexcept
+    {
+        return filenames.size();
+    }
+
+    //!\brief Changes the number of managed IBFs.
     void resize_bins(size_t const size)
     {
         bin_to_filename_position.resize(size);
     }
 
+    //!\brief Changes the number of managed user bins.
     void resize_filename(size_t const size)
     {
         filenames.resize(size);
     }
 
+    //!\brief Returns a vector containing user bin indices for each bin in the `idx`th IBF.
     std::vector<int64_t> & bin_at(size_t const idx)
     {
         return bin_to_filename_position[idx];
     }
 
+    //!\brief Returns the filename of the `idx`th user bin.
     std::string & filename_at(size_t const idx)
     {
         return filenames[idx];
     }
 
+    //!\brief For a pair `(a,b)`, returns a const reference to the filename of the user bin at IBF `a`, bin `b`.
     std::string const & operator[](std::pair<size_t, size_t> const & index_pair) const
     {
         return filenames[bin_to_filename_position[index_pair.first][index_pair.second]];
     }
 
+    /*!\brief Returns a view over the user bin filenames for the `ibf_idx`the IBF.
+              An empty string is returned for merged bins.
+     */
     auto operator[](size_t const ibf_idx) const
     {
         return bin_to_filename_position[ibf_idx]
@@ -112,11 +145,17 @@ public:
                  });
     }
 
+    //!\brief Returns the filename index of the `ibf_idx`th IBF for bin `bin_idx`.
     int64_t filename_index(size_t const ibf_idx, size_t const bin_idx) const
     {
         return bin_to_filename_position[ibf_idx][bin_idx];
     }
 
+    /*!\brief Writes all filenames to a stream. Index and filename are tab-separated.
+     * \details
+     * 0	<path_to_user_bin_0>
+     * 1	<path_to_user_bin_1>
+     */
     template <typename stream_t>
     void write_filenames(stream_t & out_stream) const
     {
@@ -135,10 +174,115 @@ public:
         }
     }
 
+    /*!\cond DEV
+     * \brief Serialisation support function.
+     * \tparam archive_t Type of `archive`; must satisfy seqan3::cereal_archive.
+     * \param[in] archive The archive being serialised from/to.
+     *
+     * \attention These functions are never called directly, see \ref serialisation for more details.
+     */
     template <typename archive_t>
     void serialize(archive_t & archive)
     {
         archive(filenames);
         archive(bin_to_filename_position);
     }
+    //!\endcond
 };
+
+template <seqan3::data_layout data_layout_mode>
+template <std::integral value_t>
+class hierarchical_interleaved_bloom_filter<data_layout_mode>::counting_agent_type
+{
+private:
+    //!\brief The type of the augmented hierarchical_interleaved_bloom_filter.
+    using hibf_t = hierarchical_interleaved_bloom_filter<data_layout_mode>;
+
+    //!\brief The type of the counting agent of an individual IBF of the hierarchical_interleaved_bloom_filter.
+    using counting_agent_t = typename hibf_t::ibf_t::counting_agent_type<value_t>;
+
+    //!\brief A pointer to the augmented hierarchical_interleaved_bloom_filter.
+    hibf_t const * hibf_ptr{nullptr};
+
+    //!\brief Stores a counting agent for each IBF of the hierarchical_interleaved_bloom_filter.
+    std::vector<counting_agent_t> counting_agents;
+
+public:
+    /*!\name Constructors, destructor and assignment
+     * \{
+     */
+    counting_agent_type() = default; //!< Defaulted.
+    counting_agent_type(counting_agent_type const &) = default; //!< Defaulted.
+    counting_agent_type & operator=(counting_agent_type const &) = default; //!< Defaulted.
+    counting_agent_type(counting_agent_type &&) = default; //!< Defaulted.
+    counting_agent_type & operator=(counting_agent_type &&) = default; //!< Defaulted.
+    ~counting_agent_type() = default; //!< Defaulted.
+
+    /*!\brief Construct a counting_agent_type for an existing hierarchical_interleaved_bloom_filter.
+     * \private
+     * \param hibf The hierarchical_interleaved_bloom_filter.
+     */
+    explicit counting_agent_type(hibf_t const & hibf) :
+        hibf_ptr(std::addressof(hibf)), result_buffer(hibf.user_bins.num_user_bins())
+    {
+        for (auto && ibf : hibf.ibf_vector)
+            counting_agents.emplace_back(ibf.template counting_agent<value_t>());
+    }
+    //!\}
+
+    //!\brief Stores the result of bulk_count().
+    seqan3::counting_vector<value_t> result_buffer;
+
+    /*!\name Counting
+     * \{
+     */
+    /*!\brief Counts the occurrences in each user bin for all values in a range.
+     */
+    template <std::ranges::range value_range_t>
+    [[nodiscard]] seqan3::counting_vector<value_t> const & bulk_count(value_range_t && values) & noexcept
+    {
+        assert(hibf_ptr != nullptr);
+        assert(result_buffer.size() == hibf_ptr->user_bins.num_user_bins());
+
+        static_assert(std::ranges::input_range<value_range_t>, "The values must model input_range.");
+        static_assert(std::unsigned_integral<std::ranges::range_value_t<value_range_t>>,
+                      "An individual value must be an unsigned integral.");
+
+        std::ranges::fill(result_buffer, 0);
+
+        size_t sum{};
+        size_t ibf_idx{};
+
+        for (auto && counting_agent : counting_agents)
+        {
+            auto const & counts = counting_agent.bulk_count(values);
+
+            for (size_t bin{}; bin < counts.size(); ++bin)
+            {
+                sum += counts[bin];
+                auto const current_filename_index = hibf_ptr->user_bins.filename_index(ibf_idx, bin);
+
+                if (current_filename_index < 0)
+                {
+                    sum = 0;
+                }
+                else if (bin == counts.size() - 1 || current_filename_index != hibf_ptr->user_bins.filename_index(ibf_idx, bin + 1))
+                {
+                    result_buffer[current_filename_index] = sum;
+                    sum = 0;
+                }
+            }
+            ++ibf_idx;
+        }
+
+        return result_buffer;
+    }
+
+    // `bulk_count` cannot be called on a temporary, since the object the returned reference points to
+    // is immediately destroyed.
+    template <std::ranges::range value_range_t>
+    [[nodiscard]] seqan3::counting_vector<value_t> const & bulk_count(value_range_t && values) && noexcept = delete;
+    //!\}
+};
+
+} // namespace hibf

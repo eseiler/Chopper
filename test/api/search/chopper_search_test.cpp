@@ -48,17 +48,17 @@ struct chopper_search_test : public ::testing::Test
 
 TEST_F(chopper_search_test, write_result)
 {
-    std::vector<std::pair<int32_t, uint32_t>> result;
-    result.emplace_back(0, 0u);
-    result.emplace_back(0, 1u);
-    result.emplace_back(0, 2u);
-    result.emplace_back(0, 5u);
-    result.emplace_back(1, 0u);
-    result.emplace_back(1, 2u);
+    seqan3::counting_vector<uint16_t> result(9);
+    result[0] = 5u;
+    result[1] = 5u;
+    result[2] = 5u;
+    result[5] = 5u;
+    result[6] = 5u;
+    result[8] = 5u;
 
     std::string query_id{"query1"};
 
-    hierarchical_interleaved_bloom_filter hibf;
+    hibf::hierarchical_interleaved_bloom_filter hibf;
 
     hibf.user_bins.resize_filename(9);
     hibf.user_bins.filename_at(0) = "user_bin_0-0";
@@ -80,7 +80,7 @@ TEST_F(chopper_search_test, write_result)
         sync_out out_file{tmp_file.get_path()};
         write_header(hibf, out_file);
         std::string buffer{};
-        write_result(buffer, result, query_id, hibf, out_file);
+        write_result(buffer, result, query_id, hibf, out_file, 5u);
     }
 
     std::string expected

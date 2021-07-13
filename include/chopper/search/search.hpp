@@ -13,7 +13,7 @@ inline void clear_and_compute_kmers(std::vector<size_t> & kmers, seqan3::dna4_ve
 }
 
 template <seqan3::data_layout data_layout_mode>
-inline void write_header(hierarchical_interleaved_bloom_filter<data_layout_mode> const & hibf, sync_out & out_stream)
+inline void write_header(hibf::hierarchical_interleaved_bloom_filter<data_layout_mode> const & hibf, sync_out & out_stream)
 {
     hibf.user_bins.write_filenames(out_stream);
     out_stream << "#QUERY_NAME\tUSER_BINS\n";
@@ -21,35 +21,30 @@ inline void write_header(hierarchical_interleaved_bloom_filter<data_layout_mode>
 
 template <seqan3::data_layout data_layout_mode>
 inline void write_result(std::string & line,
-                         std::vector<std::pair<int32_t, uint32_t>> & membership_result,
+                         seqan3::counting_vector<uint16_t> const & result,
                          std::string const & id,
-                         hierarchical_interleaved_bloom_filter<data_layout_mode> const & hibf,
-                         sync_out & out_stream)
+                         hibf::hierarchical_interleaved_bloom_filter<data_layout_mode> const & hibf,
+                         sync_out & out_stream,
+                         size_t const threshold)
 {
     line.clear();
     line += id;
     line += '\t';
 
-    if (membership_result.empty())
+    if (result.empty())
     {
         line += '\n';
         out_stream << line;
         return;
     }
 
-    // otherwise the result output is not testable
-    std::ranges::sort(membership_result, [&hibf] (auto const & pair1, auto const & pair2)
-                                         {
-                                             return hibf.user_bins.filename_index(pair1.first, pair1.second) <
-                                                    hibf.user_bins.filename_index(pair2.first, pair2.second);
-                                         });
-
-    for (size_t i = 0; i < membership_result.size(); ++i)
+    for (size_t i = 0; i < result.size(); ++i)
     {
-        auto & [ibf_idx, bin_idx] = membership_result[i];
-        assert(hibf.user_bins.filename_index(ibf_idx, bin_idx) > -1);
-        line += std::to_string(hibf.user_bins.filename_index(ibf_idx, bin_idx));
-        line += ',';
+        if (result[i] >= threshold)
+        {
+            line += std::to_string(i);
+            line += ',';
+        }
     }
 
     line.back() = '\n';
@@ -59,7 +54,7 @@ inline void write_result(std::string & line,
 template <seqan3::data_layout data_layout_mode>
 inline void search(std::vector<std::pair<int32_t, uint32_t>> & membership_result,
                    std::vector<size_t> const & kmers,
-                   hierarchical_interleaved_bloom_filter<data_layout_mode> const & hibf,
+                   hibf::hierarchical_interleaved_bloom_filter<data_layout_mode> const & hibf,
                    search_config const & config,
                    int64_t const ibf_idx)
 {
