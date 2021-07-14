@@ -346,4 +346,6 @@ public:
 // TODO
 // membership agent that returns vector of user bin ids and uses a threshold
 // count agent that just counts and returns count for each user bin: !! do not recurse if count is 0 !!
+// Maybe an interface with optional threshold for counting?
 // It is apparently no efficient to store the counting agents of the IBFs
+// Maybe just store the counting agent of the top level ibf?
